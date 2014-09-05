@@ -97,16 +97,16 @@ if( database_tests ) then
 	
 		-- create a new object, retrieve it, then delete it
 		{ "database-create", clobj.createDatabase, {
-			database = "newcolls",
+			database = "newdb",
 		} },
 		{ "database-retrieve", clobj.retrieveDatabase, {
-			database = "newcolls",
+			database = "newdb",
 		} },
 		{ "database-update", clobj.updateDatabase, {
-			database = "newcolls",
+			database = "newdb",
 		} },
 		{ "database-delete", clobj.deleteDatabase, {
-			database = "newcolls",
+			database = "newdb",
 		} },
 	})
 end

@@ -30,8 +30,8 @@ asynchr_tests = false  -- only login/logout are testable for asynchr
 cmdseq_tests = true    -- ... use cmdseq instead
 -- what test-sets to run?
 document_tests = false
-database_tests = false
-attachment_tests = true
+database_tests = true
+attachment_tests = false
 query_tests = false
 
 --

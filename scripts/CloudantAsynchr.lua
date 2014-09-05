@@ -262,7 +262,7 @@ function Cloudant.new( params )
 
 
 	--
-	-- data-items (entities) objects
+	-- document objects
 	function grp.createDocument( xtra )
 		grp.handleXtra( xtra )
 		if( grp.data == nil ) then
@@ -402,7 +402,6 @@ function Cloudant.new( params )
 			grp.throwError( "No database specified" )
 			return
 		end
-		-- TODO: check that database is pluralized
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 				.. grp.database
@@ -447,7 +446,6 @@ function Cloudant.new( params )
 			grp.throwError( "No database specified" )
 			return
 		end
-		-- TODO: check that database is pluralized
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 			.. grp.database .. "/_index"
@@ -459,7 +457,6 @@ function Cloudant.new( params )
 			grp.throwError( "No database specified" )
 			return
 		end
-		-- TODO: check that database is pluralized
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 			.. grp.database .. "/_index"
@@ -481,7 +478,6 @@ function Cloudant.new( params )
 			grp.throwError( "No database specified" )
 			return
 		end
-		-- TODO: check that database is pluralized
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 				.. grp.database .. "/_find"
