@@ -125,20 +125,11 @@ if( attachment_tests ) then
 		} )
 end
 
-if( query_tests ) then
-	function inspectResults( tbl )
-		print( "inspectResult caught:" )
-		print_r( tbl )
-		for k,v in pairs(tbl.clobj.last_response.docs) do
-			print( "  ["..k.."] = ["..tostring(v).."]  "..
-				"("..v._id..","..v._rev..")" )
-			--print_r( v )
-			commandSeq.insertBefore( "logout", 
-				"query-document-delete",
-				clobj.deleteDocument, {
-					uuid = v._id,
-					rev  = v._rev,
-			} )
+if( query_tests ) then	
+	function printQueryResults( title, cl )
+		print( "running "..title.." command" )
+		for k,v in pairs(cl.last_response.docs) do
+			print( "  ["..k.."] = [" .. json.encode(v) .. "]" )
 		end
 	end
 	
@@ -154,24 +145,27 @@ if( query_tests ) then
 			},
 		} )
 
-	execCommand( "query-document-create", clobj.createDocument, {
+	execCommand( "query-document-create1", clobj.createDocument, {
 			data = {
 				mykey = "abc",
 				myval = "123",
 			},
 		} )
-	execCommand( "query-document-create", clobj.createDocument, {
+	execCommand( "query-document-create2", clobj.createDocument, {
 			data = {
 				mykey = "abc",
 				myval = "456",
 			},
 		} )
-	execCommand( "query-document-create", clobj.createDocument, {
+	execCommand( "query-document-create3", clobj.createDocument, {
 			data = {
 				mykey = "def",
 				myval = "123",
 			},
 		} )
+	execCommand( "list-all-docs", clobj.listDocuments, {
+		include_docs = true,
+	} )
 	execCommand( "query-database-query1", clobj.queryDatabase, {
 			query = {
 				selector = {
@@ -181,14 +175,29 @@ if( query_tests ) then
 				},
 			},
 		} )
-	execCommand( "query-inspect-results", commandSeq.userFunction, {
-			fcn  = inspectResults,
-			args = {
-				database = "stuff",
-				query = "",
-				clobj = clobj,
-			}
+	printQueryResults( "inspect query results:", clobj )
+
+	execCommand( "query-database-query2", clobj.queryDatabase, {
+			query = {
+				selector = {
+					myval = {
+						["$eq"] = "123",
+					},
+				},
+			},
 		} )
+
+	-- clean up
+	print( "cleaning up query documents" )
+	local rtn = clobj.listDocuments()
+	for k,v in pairs(rtn.response.rows) do
+		print( "  ["..k.."] = [" .. json.encode(v) .. "]" )
+		execCommand( "deleting item "..k, clobj.deleteDocument, {
+			uuid = v.id,
+			rev = v.value.rev,
+		})
+	end
+
 end
 
 execCommand( "logout", clobj.userLogout, nil )

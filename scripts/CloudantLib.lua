@@ -185,6 +185,7 @@ function Cloudant.new( params )
 		print( "found "..n.." chunks of data" )
 		local resp_txt = ""
 		for i=1,n do
+			print( "  chunk "..i.." = "..#response_body[i] .. " bytes" )
 			resp_txt = resp_txt .. response_body[i]
 		end
 		
@@ -349,10 +350,6 @@ function Cloudant.new( params )
 		local url = grp.baseurl .. "/"
 				.. grp.database
 		local httpverb = "POST"
-		if( grp.uuid ~= 0 ) then
-			httpverb = "PUT"
-			url = url .. "/" .. grp.uuid
-		end
 		return grp.CloudantWorker( httpverb, url, auxdata )
 	end
 	function grp.retrieveDocument( xtra )
@@ -416,6 +413,27 @@ function Cloudant.new( params )
 				.. grp.database .. "/"
 				.. grp.uuid
 		return grp.CloudantWorker( "HEAD", url, auxdata )
+	end
+
+	function grp.listDocuments( xtra )
+		grp.handleXtra( xtra )
+		if( grp.database == nil ) then
+			grp.throwError( "No database specified" )
+			return
+		end
+		local auxdata = grp.initAuxdata()
+		local url = grp.baseurl .. "/"
+				.. grp.database .. "/_all_docs"
+				
+		-- TODO: other parameters could be included
+		--    startkey/endkey, descending, limit, skip
+		--    key= .. gives info sort of like "HEAD"
+		if( xtra ~= nil ) then
+			if( xtra.include_docs ~= nil ) then
+				url = url .. "?include_docs=" .. tostring(xtra.include_docs)
+			end
+		end
+		return grp.CloudantWorker( "GET", url, auxdata )	
 	end
 
 	function grp.createDocumentAttachment( xtra )
@@ -546,6 +564,7 @@ function Cloudant.new( params )
 	function grp.deleteIndex( xtra )
 		return grp.throwError( "No way to delete an index" )
 	end
+	
 	function grp.queryDatabase( xtra )
 		grp.handleXtra( xtra )
 		if( grp.database == nil ) then
@@ -559,7 +578,6 @@ function Cloudant.new( params )
 		print( "query ["..auxdata.body.."]" )
 		return grp.CloudantWorker( "POST", url, auxdata )	
 	end
-
 
 	return grp
 end
