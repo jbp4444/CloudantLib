@@ -25,11 +25,11 @@
 require( "cloudantInfo" )
 
 -- what test-environment to run?
-synchr_tests = false
+synchr_tests = true
 asynchr_tests = false  -- only login/logout are testable for asynchr
-cmdseq_tests = true    -- ... use cmdseq instead
+cmdseq_tests = false   -- ... use cmdseq instead
 -- what test-sets to run?
-document_tests = false
+document_tests = true
 database_tests = true
 attachment_tests = false
 query_tests = false
@@ -94,7 +94,7 @@ end
 
 -- run the synchronous (socket.http/ltn12) tests?
 if( synchr_tests ) then
-	--require( "test_synchr" )
+	require( "test_synchr" )
 end
 
 -- run the asynchronous (network.request) tests?

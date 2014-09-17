@@ -24,7 +24,7 @@
 -- same unit-tests that a "full" asynchr test-set would perform.
 --
 
-local cloudant = require( "scripts.CloudantAsynchr" )
+local cloudant = require( "scripts.CloudantLib" )
 local json = require( "json" )
 
 for i=1,5 do

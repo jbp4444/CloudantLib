@@ -14,6 +14,8 @@
 --   limitations under the License.
 --
 
+local http = require("socket.http")
+local ltn12 = require("ltn12")
 local json = require( "json" )
 local socketurl = require( "socket.url" ) -- for urlencode/escape
 
@@ -28,6 +30,7 @@ function Cloudant.new( params )
 		username = "default",
 		password = "default",
 		sessionauth = "default",
+		synchronous = false,
 		query = "default",
 		uuid = 0,
 		rev  = 0,
@@ -135,9 +138,9 @@ function Cloudant.new( params )
 				grp.last_response = resp
 				grp.last_response_headers = respHdrs
 				print_r( respHeaders )
-				if( respHdrs["Set-Cookie"] ~= nil ) then
+				if( respHdrs["set-cookie"] ~= nil ) then
 					print( "found a response cookie" )
-					grp.sessionauth = respHdrs["Set-Cookie"]
+					grp.sessionauth = respHdrs["set-cookie"]
 					print( "got authtoken ["..grp.sessionauth.."]" )
 				end
 			end
@@ -149,8 +152,70 @@ function Cloudant.new( params )
 			end
 		end
 	end
+	
+	function grp.synchrNetworkRequest( url, httpverb, auxdata )
+		local rtn = {
+			name = "CloudantResponse",
+			target = grp,
+			isError = false,
+			status = 100,
+			response = "IN_PROGRESS",
+			responseHeaders = {},
+		}
+		
+		if( auxdata.body ~= nil ) then
+			auxdata.headers["Content-Length"] = string.len(auxdata.body)
+		end
+		
+		local response_body = {}
+		local idx,statusCode,resp_hdrs = http.request({
+			method = httpverb,
+			url = url,
+			headers = auxdata.headers,
+			source = ltn12.source.string(auxdata.body),
+			sink = ltn12.sink.table(response_body),
+		})
+
+		if( idx ~= 1 ) then
+			print( "** ERROR: http.request returned idx="..idx.." (expected 1)" )
+		end
+
+		-- we may have more than 1 chunk of data .. stitch it all together
+		local n = #response_body
+		print( "found "..n.." chunks of data" )
+		local resp_txt = ""
+		for i=1,n do
+			resp_txt = resp_txt .. response_body[i]
+		end
+		
+		rtn.isError = false
+		rtn.status = statusCode
+		if( resp_txt ~= nil ) then
+			rtn.response = json.decode( resp_txt )
+		end
+		--rtn.response = resp_txt
+		rtn.responseHeaders = resp_hdrs
+		grp.last_response = rtn.response
+		grp.last_response_headers = rtn.responseHeaders
+
+		if( resp_hdrs["set-cookie"] ~= nil ) then
+			print( "found a response cookie" )
+			grp.sessionauth = resp_hdrs["set-cookie"]
+			print( "got authtoken ["..grp.sessionauth.."]" )
+		end
+		
+		return rtn
+	end
 
 	function grp.CloudantWorker( httpverb, url, auxdata )
+		local rtn = {
+			name = "CloudantResponse",
+			target = grp,
+			isError = false,
+			status = 100,
+			response = "{\"status\": \"IN_PROGRESS\"}",
+			responseHeaders = {},
+		}
 		grp.inProgress = true
 		grp.network_num_tries = 1
 
@@ -170,23 +235,31 @@ function Cloudant.new( params )
 			print( "  body data found ["..auxdata.body.."]" )
 		end
 		
-		network.request( url, httpverb, grp.baseNetworkListener, auxdata )
+		if( grp.synchronouse == false ) then
+			network.request( url, httpverb, grp.baseNetworkListener, auxdata )
+		else
+			rtn = grp.synchrNetworkRequest( url, httpverb, auxdata )
+		end
+		return rtn
 	end
 
 	-- TODO: may need to put this behind timer.performWithDelay
 	-- or else main thread will throw error/onComplete func before
 	-- the program ever had a chance to respond 
 	function grp.throwError( resp )
-		local ee = {
+		local rtn = {
 			name = "CloudantResponse",
 			target = grp,
 			isError = true,
 			status = 400,
-			response = resp,
-		}		
-		if( grp.onComplete ~= nil ) then
-			grp.onComplete( ee )
+			response = "ERROR",
+		}
+		if( grp.synchronous == false ) then
+			if( grp.onComplete ~= nil ) then
+				grp.onComplete( ee )
+			end
 		end
+		return rtn
 	end
 	
 	function grp.handleXtra( xtra )
@@ -231,7 +304,8 @@ function Cloudant.new( params )
 		if( grp.sessionauth == "default" ) then
 			-- no auth yet
 		else
-			ad.headers["AuthSession"] = grp.sessionauth
+			--ad.headers["AuthSession"] = grp.sessionauth
+			ad.headers["Cookie"] = grp.sessionauth
 		end
 		return ad
 	end
@@ -245,19 +319,19 @@ function Cloudant.new( params )
 		auxdata.headers["Content-Type"] = "application/x-www-form-urlencoded"
 		auxdata.body = "username=" .. grp.username
 			.. "&password=" .. grp.password
-		grp.CloudantWorker( "POST", url, auxdata )
+		return grp.CloudantWorker( "POST", url, auxdata )
 	end
 	function grp.userLogout( xtra )
 		grp.handleXtra( xtra )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/_session"
-		grp.CloudantWorker( "DELETE", url, auxdata )
+		return grp.CloudantWorker( "DELETE", url, auxdata )
 	end
 	function grp.userStatus( xtra )
 		grp.handleXtra( xtra )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/_session"
-		grp.CloudantWorker( "GET", url, auxdata )
+		return grp.CloudantWorker( "GET", url, auxdata )
 	end
 
 
@@ -279,7 +353,7 @@ function Cloudant.new( params )
 			httpverb = "PUT"
 			url = url .. "/" .. grp.uuid
 		end
-		grp.CloudantWorker( httpverb, url, auxdata )
+		return grp.CloudantWorker( httpverb, url, auxdata )
 	end
 	function grp.retrieveDocument( xtra )
 		grp.handleXtra( xtra )
@@ -291,7 +365,7 @@ function Cloudant.new( params )
 		local url = grp.baseurl .. "/"
 				.. grp.database .. "/"
 				.. grp.uuid
-		grp.CloudantWorker( "GET", url, auxdata )
+		return grp.CloudantWorker( "GET", url, auxdata )
 	end
 	function grp.updateDocument( xtra )
 		grp.handleXtra( xtra )
@@ -312,7 +386,7 @@ function Cloudant.new( params )
 		local url = grp.baseurl .. "/"
 				.. grp.database .. "/"
 				.. grp.uuid
-		grp.CloudantWorker( "PUT", url, auxdata )
+		return grp.CloudantWorker( "PUT", url, auxdata )
 	end
 	function grp.deleteDocument( xtra )
 		grp.handleXtra( xtra )
@@ -328,7 +402,7 @@ function Cloudant.new( params )
 		local url = grp.baseurl .. "/"
 				.. grp.database .. "/"
 				.. grp.uuid
-		grp.CloudantWorker( "DELETE", url, auxdata )
+		return grp.CloudantWorker( "DELETE", url, auxdata )
 	end
 	-- TODO: "info" action doesn't return id, so "LAST" doesn't work
 	function grp.infoDocument( xtra )
@@ -341,7 +415,7 @@ function Cloudant.new( params )
 		local url = grp.baseurl .. "/"
 				.. grp.database .. "/"
 				.. grp.uuid
-		grp.CloudantWorker( "HEAD", url, auxdata )
+		return grp.CloudantWorker( "HEAD", url, auxdata )
 	end
 
 	function grp.createDocumentAttachment( xtra )
@@ -374,7 +448,7 @@ function Cloudant.new( params )
 				.. grp.database .. "/" 
 				.. grp.uuid .. "/"
 				.. grp.file
-		grp.CloudantWorker( "PUT", url, auxdata )
+		return grp.CloudantWorker( "PUT", url, auxdata )
 	end
 	function grp.retrieveDocumentAttachment( xtra )
 		grp.handleXtra( xtra )
@@ -391,7 +465,7 @@ function Cloudant.new( params )
 				.. grp.database .. "/"
 				.. grp.uuid .. "/"
 				.. grp.file
-		grp.CloudantWorker( "GET", url, auxdata )
+		return grp.CloudantWorker( "GET", url, auxdata )
 	end
 
 	--
@@ -405,7 +479,7 @@ function Cloudant.new( params )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 				.. grp.database
-		grp.CloudantWorker( "PUT", url, auxdata )
+		return grp.CloudantWorker( "PUT", url, auxdata )
 	end
 	function grp.retrieveDatabase( xtra )
 		grp.handleXtra( xtra )
@@ -416,10 +490,10 @@ function Cloudant.new( params )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 				.. grp.database
-		grp.CloudantWorker( "GET", url, auxdata )
+		return grp.CloudantWorker( "GET", url, auxdata )
 	end
 	function grp.updateDatabase( xtra )
-		grp.throwError( "No way to update a database" )
+		return grp.throwError( "No way to update a database" )
 	end
 	function grp.deleteDatabase( xtra )
 		grp.handleXtra( xtra )
@@ -430,13 +504,13 @@ function Cloudant.new( params )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 				.. grp.database
-		grp.CloudantWorker( "DELETE", url, auxdata )
+		return grp.CloudantWorker( "DELETE", url, auxdata )
 	end
 	function grp.listAllDatabases( xtra )
 		grp.handleXtra( xtra )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/_all_dbs"
-		grp.CloudantWorker( "GET", url, auxdata )
+		return grp.CloudantWorker( "GET", url, auxdata )
 	end
 	
 	-- queries on database objects
@@ -449,7 +523,7 @@ function Cloudant.new( params )
 		local auxdata = grp.initAuxdata()
 		local url = grp.baseurl .. "/"
 			.. grp.database .. "/_index"
-		grp.CloudantWorker( "GET", url, auxdata )	
+		return grp.CloudantWorker( "GET", url, auxdata )	
 	end
 	function grp.createIndex( xtra )
 		grp.handleXtra( xtra )
@@ -461,16 +535,16 @@ function Cloudant.new( params )
 		local url = grp.baseurl .. "/"
 			.. grp.database .. "/_index"
 		auxdata.body = json.encode( grp.data )
-		grp.CloudantWorker( "POST", url, auxdata )	
+		return grp.CloudantWorker( "POST", url, auxdata )	
 	end
 	function grp.retrieveIndex( xtra )
-		grp.throwError( "No way to retrieve an index (try query)" )
+		return grp.throwError( "No way to retrieve an index (try query)" )
 	end
 	function grp.updateIndex( xtra )
-		grp.throwError( "No way to update an index" )
+		return grp.throwError( "No way to update an index" )
 	end
 	function grp.deleteIndex( xtra )
-		grp.throwError( "No way to delete an index" )
+		return grp.throwError( "No way to delete an index" )
 	end
 	function grp.queryDatabase( xtra )
 		grp.handleXtra( xtra )
@@ -483,7 +557,7 @@ function Cloudant.new( params )
 				.. grp.database .. "/_find"
 		auxdata.body = json.encode( grp.query )
 		print( "query ["..auxdata.body.."]" )
-		grp.CloudantWorker( "POST", url, auxdata )	
+		return grp.CloudantWorker( "POST", url, auxdata )	
 	end
 
 
